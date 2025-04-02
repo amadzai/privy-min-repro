@@ -1,12 +1,10 @@
 import "@/styles/globals.css";
-import "@rainbow-me/rainbowkit/styles.css";
 import type { AppProps } from "next/app";
 import { WagmiProvider } from "@privy-io/wagmi";
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import { config } from "@/config/wagmi";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { scrollSepolia, scroll } from "viem/chains";
-
 import { SmartWalletsProvider } from "@privy-io/react-auth/smart-wallets";
 
 const queryClient = new QueryClient({
@@ -29,7 +27,6 @@ export default function App({ Component, pageProps }: AppProps) {
         appearance: {
           theme: "dark",
           accentColor: "#676FFF",
-          logo: "/foresightLogo.jpg",
         },
         // Create embedded wallets for users who don't have a wallet
         embeddedWallets: {
