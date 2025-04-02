@@ -1,33 +1,49 @@
 import { useEffect, useState } from "react";
 import { Button } from "./Button";
-import { useUnifiedWallet } from "../hooks/useUnifiedWallet";
-import { useContractInteraction } from "../hooks/useContractInteraction";
+import { useSmartWallets } from "@privy-io/react-auth/smart-wallets";
+import { useReadContract, useWaitForTransactionReceipt } from "wagmi";
 import { extendedERC20ABI } from "../config/abi/ERC20";
-import { formatUnits, parseUnits, type Address } from "viem";
+import {
+  formatUnits,
+  parseUnits,
+  encodeFunctionData,
+  type Address,
+} from "viem";
 import toast from "react-hot-toast";
 
 const ClaimFaucetButton = () => {
-  const { address, userBalance, refetchUserBalance, walletType } =
-    useUnifiedWallet();
+  const { client: smartWalletClient } = useSmartWallets();
   const [isClaimingFaucet, setIsClaimingFaucet] = useState(false);
+  const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
 
-  const faucet = useContractInteraction({
-    to: process.env.NEXT_PUBLIC_COLLATERAL_ADDRESS as Address,
+  const address = smartWalletClient?.account?.address;
+
+  const { data: balanceData, refetch: refetchBalance } = useReadContract({
+    address: process.env.NEXT_PUBLIC_COLLATERAL_ADDRESS as Address,
     abi: extendedERC20ABI,
-    functionName: "faucet",
-    args: [BigInt(0)],
-    description: "Faucet",
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: {
+      enabled: Boolean(address),
+      refetchOnWindowFocus: true,
+    },
+  });
+
+  const userBalance = balanceData ? BigInt(balanceData.toString()) : BigInt(0);
+
+  const { isSuccess } = useWaitForTransactionReceipt({
+    hash: txHash,
   });
 
   useEffect(() => {
-    if (faucet.isConfirmed && faucet.latestHash) {
-      refetchUserBalance();
+    if (isSuccess) {
+      refetchBalance();
     }
-  }, [faucet.isConfirmed, faucet.latestHash, refetchUserBalance]);
+  }, [isSuccess, refetchBalance]);
 
   const claimFaucet = async () => {
-    if (!address) {
-      toast.error("Please connect your wallet first");
+    if (!smartWalletClient || !address) {
+      toast.error("Smart wallet not initialized");
       return;
     }
 
@@ -39,11 +55,34 @@ const ClaimFaucetButton = () => {
       setIsClaimingFaucet(true);
 
       const amount = parseUnits("1000", 6);
-      await faucet.execute({
+      const data = encodeFunctionData({
+        abi: extendedERC20ABI,
+        functionName: "faucet",
         args: [amount],
       });
+
+      const hash = await smartWalletClient.sendTransaction(
+        {
+          to: process.env.NEXT_PUBLIC_COLLATERAL_ADDRESS as Address,
+          data,
+          value: BigInt(0),
+          account: smartWalletClient.account,
+          chain: smartWalletClient.chain,
+        },
+        {
+          uiOptions: {
+            description: "Claim Faucet",
+          },
+        }
+      );
+
+      setTxHash(hash);
+      toast.success("Faucet claim initiated");
     } catch (err) {
       console.error("Faucet claim error:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to claim from faucet"
+      );
     } finally {
       setIsClaimingFaucet(false);
     }
@@ -57,23 +96,18 @@ const ClaimFaucetButton = () => {
     <div className="flex flex-col items-center gap-4">
       <div className="text-xl font-medium">Balance: {formattedBalance}</div>
 
-      {walletType && (
-        <div className="text-sm text-gray-500">
-          Using{" "}
-          {walletType === "smart" ? "Privy Smart Wallet" : "Standard Wallet"}
-        </div>
-      )}
+      <div className="text-sm text-gray-500">Using Privy Smart Wallet</div>
 
       <Button
         onClick={claimFaucet}
         variant="primary"
-        disabled={isClaimingFaucet || faucet.isLoading}
+        disabled={isClaimingFaucet || !smartWalletClient}
         size="lg"
       >
-        {isClaimingFaucet || faucet.isLoading ? "Claiming..." : "Claim Faucet"}
+        {isClaimingFaucet ? "Claiming..." : "Claim Faucet"}
       </Button>
 
-      {faucet.isConfirmed && (
+      {isSuccess && (
         <div className="text-green-500 mt-2">
           Claim successful! Balance updated.
         </div>
