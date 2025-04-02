@@ -1,84 +1,54 @@
 import { useEffect, useState } from "react";
 import { Button } from "./Button";
-import { usePrivy } from "@privy-io/react-auth";
-import {
-  useWriteContract,
-  useWaitForTransactionReceipt,
-  useAccount,
-  useReadContract,
-} from "wagmi";
+import { useUnifiedWallet } from "../hooks/useUnifiedWallet";
+import { useContractInteraction } from "../hooks/useContractInteraction";
 import { extendedERC20ABI } from "../config/abi/ERC20";
 import { formatUnits, parseUnits, type Address } from "viem";
 import toast from "react-hot-toast";
 
 const ClaimFaucetButton = () => {
-  const { authenticated } = usePrivy();
-  const { address } = useAccount();
+  const { address, userBalance, refetchUserBalance, walletType } =
+    useUnifiedWallet();
   const [isClaimingFaucet, setIsClaimingFaucet] = useState(false);
 
-  // Direct contract write call
-  const { writeContractAsync } = useWriteContract();
-  const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
-
-  // Read user balance
-  const { data: balanceData, refetch: refetchBalance } = useReadContract({
-    address: process.env.NEXT_PUBLIC_COLLATERAL_ADDRESS as Address,
+  const faucet = useContractInteraction({
+    to: process.env.NEXT_PUBLIC_COLLATERAL_ADDRESS as Address,
     abi: extendedERC20ABI,
-    functionName: "balanceOf",
-    args: address ? [address] : undefined,
-    query: {
-      enabled: Boolean(address),
-    },
-  });
-  const userBalance = balanceData ? BigInt(balanceData.toString()) : BigInt(0);
-
-  // Watch for transaction confirmation
-  const { isSuccess } = useWaitForTransactionReceipt({
-    hash: txHash,
+    functionName: "faucet",
+    args: [BigInt(0)],
+    description: "Faucet",
   });
 
-  // Update balance when transaction succeeds
   useEffect(() => {
-    if (isSuccess) {
-      refetchBalance();
+    if (faucet.isConfirmed && faucet.latestHash) {
+      refetchUserBalance();
     }
-  }, [isSuccess, refetchBalance]);
+  }, [faucet.isConfirmed, faucet.latestHash, refetchUserBalance]);
 
   const claimFaucet = async () => {
-    if (!authenticated || !address) {
+    if (!address) {
       toast.error("Please connect your wallet first");
       return;
     }
 
     if (isClaimingFaucet) {
-      return; // Prevent double clicks
+      return;
     }
 
     try {
       setIsClaimingFaucet(true);
 
-      // Execute faucet transaction directly
       const amount = parseUnits("1000", 6);
-      const hash = await writeContractAsync({
-        address: process.env.NEXT_PUBLIC_COLLATERAL_ADDRESS as Address,
-        abi: extendedERC20ABI,
-        functionName: "faucet",
+      await faucet.execute({
         args: [amount],
       });
-
-      setTxHash(hash);
-      toast.success("Faucet claim initiated");
     } catch (err) {
       console.error("Faucet claim error:", err);
-      toast.error(
-        err instanceof Error ? err.message : "Failed to claim from faucet"
-      );
     } finally {
       setIsClaimingFaucet(false);
     }
   };
 
-  // Format the balance (assuming 6 decimals for USDT)
   const formattedBalance = userBalance
     ? `$${Number(formatUnits(userBalance, 6)).toFixed(2)}`
     : "$0.00";
@@ -87,16 +57,23 @@ const ClaimFaucetButton = () => {
     <div className="flex flex-col items-center gap-4">
       <div className="text-xl font-medium">Balance: {formattedBalance}</div>
 
+      {walletType && (
+        <div className="text-sm text-gray-500">
+          Using{" "}
+          {walletType === "smart" ? "Privy Smart Wallet" : "Standard Wallet"}
+        </div>
+      )}
+
       <Button
         onClick={claimFaucet}
         variant="primary"
-        disabled={isClaimingFaucet}
+        disabled={isClaimingFaucet || faucet.isLoading}
         size="lg"
       >
-        {isClaimingFaucet ? "Claiming..." : "Claim Faucet"}
+        {isClaimingFaucet || faucet.isLoading ? "Claiming..." : "Claim Faucet"}
       </Button>
 
-      {isSuccess && (
+      {faucet.isConfirmed && (
         <div className="text-green-500 mt-2">
           Claim successful! Balance updated.
         </div>

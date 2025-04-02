@@ -21,14 +21,12 @@ export default function App({ Component, pageProps }: AppProps) {
     <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
       config={{
-        // Customize Privy's appearance in your app
         defaultChain: scrollSepolia,
         supportedChains: [scrollSepolia, scroll],
         appearance: {
           theme: "dark",
           accentColor: "#676FFF",
         },
-        // Create embedded wallets for users who don't have a wallet
         embeddedWallets: {
           createOnLogin: "all-users",
           showWalletUIs: true,
